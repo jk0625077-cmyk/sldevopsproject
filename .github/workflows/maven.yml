@@ -1,0 +1,39 @@
+name: CI Build and Trigger Jenkins
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Debug: show repo layout
+        run: |
+          echo "PWD: $(pwd)"
+          echo "Top-level files:"
+          ls -la
+          echo "Find pom.xml files:"
+          find . -maxdepth 4 -name pom.xml -print || true
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+
+      - name: Build with Maven (project subdir)
+        working-directory: ci-cd-demo1
+        run: mvn -B -DskipTests=false clean package
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-war
+          path: ci-cd-demo1/target/*.war
