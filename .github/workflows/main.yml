@@ -9,8 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    outputs:
-      ART_NAME: ${{ steps.set_name.outputs.art_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,18 +29,11 @@ jobs:
           cache: maven
 
       - name: Build with Maven (project subdir)
-        working-directory: ci-cd-demo
+        working-directory: ci-cd-demo1
         run: mvn -B -DskipTests=false clean package
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-war
-          path: ci-cd-demo/target/*.war
-
-      - name: Set artifact name output
-        id: set_name
-        run: |
-          ART=$(ls ci-cd-demo/target/*.war 2>/dev/null | xargs -n1 basename || true)
-          echo "art_name=$ART" >> $GITHUB_OUTPUT
-          echo "Built artifact: $ART"
+          path: ci-cd-demo1/target/*.war
