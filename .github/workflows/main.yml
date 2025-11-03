@@ -1,4 +1,4 @@
-name: CI Build and Trigger Jenkins
+name: Debug Maven Build (auto-detect pom)
 
 on:
   push:
@@ -7,19 +7,36 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
+  debug-build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Debug: show repo layout
+      - name: Repo quick listing
         run: |
-          echo "PWD: $(pwd)"
-          echo "Top-level files:"
+          echo "Runner PWD: $(pwd)"
+          echo "Top-level:"
           ls -la
-          echo "Find pom.xml files:"
-          find . -maxdepth 4 -name pom.xml -print || true
+          echo "Show first 3 levels:"
+          find . -maxdepth 3 -type d -print -exec ls -la {} \; || true
+
+      - name: Find pom.xml
+        id: findpom
+        run: |
+          POM_PATH=$(find . -maxdepth 6 -name pom.xml | sed -n '1p' || true)
+          if [ -z "$POM_PATH" ]; then
+            echo "pom_not_found=true" >> $GITHUB_OUTPUT
+            echo "No pom.xml found in repo (searched up to 6 levels)" > found.txt
+            cat found.txt
+            exit 0
+          fi
+          echo "pom_path=$POM_PATH" >> $GITHUB_OUTPUT
+          echo "Found pom: $POM_PATH"
+          echo "Directory containing pom:"
+          dirname "$POM_PATH"
+          echo "Listing that directory:"
+          ls -la "$(dirname "$POM_PATH")"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -28,12 +45,39 @@ jobs:
           java-version: 17
           cache: maven
 
-      - name: Build with Maven (project subdir)
-        working-directory: ci-cd-demo1
-        run: mvn -B -DskipTests=false clean package
+      - name: Run Maven (with debug) and capture log
+        if: ${{ steps.findpom.outputs.pom_not_found != 'true' }}
+        run: |
+          set -o pipefail
+          POM="${{ steps.findpom.outputs.pom_path }}"
+          POM_DIR=$(dirname "$POM")
+          echo "Using pom: $POM"
+          echo "Changing to: $POM_DIR"
+          cd "$POM_DIR"
+          echo "Maven version:"
+          mvn -v
+          # run mvn with -e for extra error detail; save full output to file
+          mvn -B -e -DskipTests=false clean package 2>&1 | tee "$GITHUB_WORKSPACE/maven-build.log"
+          EXITCODE=${PIPESTATUS[0]}
+          echo "MVN EXIT CODE: $EXITCODE"
+          if [ $EXITCODE -ne 0 ]; then
+            echo "Maven failed (exit $EXITCODE). The full log has been written to maven-build.log"
+            exit $EXITCODE
+          fi
+          echo "Maven succeeded."
 
-      - name: Upload artifact
+      - name: Upload build log artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: maven-build-log
+          path: maven-build.log
+
+      - name: Upload WAR artifact (if exists)
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: app-war
-          path: ci-cd-demo1/target/*.war
+          path: |
+            **/target/*.war
+            ci-cd-demo1/target/*.war
+            ci-cd-demo/target/*.war
